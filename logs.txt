@@ -1,2 +1,0 @@
-2022-05-07 19:02:29,325:Pulled the page
-2022-05-07 19:02:31,021:Logged in Sucessfully
