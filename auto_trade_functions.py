@@ -71,7 +71,7 @@ def get_nifty_price(driver):
         logger.error('Could Not Fetch Nifty Price')
     else:
         logger.info('Fetched Nifty Price Successfully')
-        return [driver,re.findall(r'\d{5}',index)[0]]
+        return int(re.findall(r'\d{5}',index)[0])
 
 def get_nifty_last_30days():
     try:
@@ -80,8 +80,9 @@ def get_nifty_last_30days():
     except:
         logger.error('Could not get data of nifty for last 30 days from yahoo finance')
     else:
-        looger.info('Fetched Last 30 Days Data From Yahoo Finance')
+        logger.info('Fetched Last 30 Days Data From Yahoo Finance')
         return nifty_data
+
 def days_to_expiry(nifty_data):
     date = nifty_data.tail(1).index[0]
     for count in range(0,7):
@@ -90,50 +91,69 @@ def days_to_expiry(nifty_data):
             today = date
             thurs = date+td(days=count)
             delta = thurs - today
-            return [thurs,delta.days]
+            return delta.days
 
-def get_prob_of_each_strike(nifty_data,strike_price,days,nifty_prob_39days):
-    #adding row into nifty_data(last 30 days)
-    last_date = nifty_data.index[-1]
-    target_date = last_date+td(days=days)
-    target_row = pd.DataFrame(data={'Open': 0, 'High': 0, 'Low': 0, 'Close':strike_price, 'Adj Close': 0, 'Volume': 0},index=[target_date])
-    nifty_data = pd.concat([nifty_data,target_row])
+def get_prob_of_strike(nifty_data,days,nifty_prob_39days):
 
     # making probabiity data with last 40 days of nifty
-
     nifty_data= nifty_data[::-1]
     current_price = nifty_data['Close'].iloc[0]
 
     nifty_data['max_perct'] = nifty_data['Close'].apply(lambda x : ((current_price/x)*100)-100)
-    nifty_data['max_perct'] = nifty_data['max_perct'].shift(-1)
+    nifty_data['max_perct'] = nifty_data['max_perct'].shift(-1,axis=0)
     nifty_data.dropna(axis=0,inplace=True)
 
-    nifty_data['days'] = range(days,days+30)
-    nifty_data['prob'] = nifty_data.apply(lambda x : get_probability(float(x['max_perct']),nifty_prob_39days[nifty_prob_39days['day']==int(x['days'])]),axis=1)
+    # check lengths of it to fill the days for each trading session
+    length = len(nifty_data)
 
+
+    nifty_data['days'] = range(days,days+length)
+    nifty_data['prob'] = nifty_data.apply(lambda x : get_probability(float(x['max_perct']),nifty_prob_39days[nifty_prob_39days['day']==int(x['days'])]),axis=1)
     print(nifty_data)
     # getting info into dict format to process it
-    row = nifty_data[nifty_data['prob']==nifty_data['prob'].max()]
-    print('Row : ',row)
+    row = nifty_data.loc[nifty_data['prob']==nifty_data['prob'].max()]
     max_perct = row['max_perct'].values[0]
     max_days = row['days'].values[0]
     prob = row['prob'].values[0]
-    if max_perct>0:
-        trend='Postive'
-    else:
-        trend='Negative'
 
+    return [prob,max_perct,max_days]
 
-    print(f'Strike Price : {strike_price}, Prob is {prob},max days are {max_days}, max perct : {max_perct}')
-
-
-def look_for_best_strikeprice(nifty_price,nifty_data,days):
-    print(dt.today())
-    strike_dic = {}
-    nifty_price = (round(float(nifty_price)/50))*50
+def look_for_best_strikeprice(driver):
+    print(f'Today is {dt.today()}, I am in the look for best strike price')
+    cmp = get_nifty_price(driver)
+    nifty_data = get_nifty_last_30days()
     nifty_prob_39days = concat_eachday_maxmoves()
-    for strike in range(nifty_price-1000,nifty_price+1000,50):
-        get_prob_of_each_strike(nifty_data,strike,price,days,nifty_prob_39days)
+    strike_dic = {}
+    # checking current scenario to determine whether to sell PE or CE (Whether to be Bullish or Bearish)
+    today_date = dt.today()
+    today_row= pd.DataFrame(data={'Open': 0, 'High': 0, 'Low': 0, 'Close':cmp, 'Adj Close': 0, 'Volume': 0},index=[today_date])
+    nifty_data = pd.concat([nifty_data,today_row])
+    print('It is after concatenating current row')
+    print(nifty_data)
+
+    current_prob = get_prob_of_strike(nifty_data,1,nifty_prob_39days)
+    print(f'Current scenario prob is {current_prob}')
+
+    # Using current scenario to find the best strike wither on downside or upside
+
+    rounded_cmp = (round(float(cmp)/50))*50
+
+    if current_prob[1]>0:
+        max_strike = rounded_cmp+1000
+        step = 50
+    elif current_prob[1]<0:
+        max_strike = rounded_cmp-1000
+        step = -50
+
+    days = days_to_expiry(nifty_data)
+    for strike in range(rounded_cmp,max_strike,step):
+        target_date = dt.today()+td(days=days)
+        target_row = pd.DataFrame(data={'Open': 0, 'High': 0, 'Low': 0, 'Close':strike, 'Adj Close': 0, 'Volume': 0},index=[target_date])
+        nifty_data = pd.concat([nifty_data,target_row])
+        print('After Concatenating target Strike')
+        print(nifty_data)
+
+        print(get_prob_of_strike(nifty_data,days,nifty_prob_39days))
 
     print(dt.today())
 
@@ -161,5 +181,5 @@ def concat_eachday_maxmoves():
 
 
 driver = start_aastha()
-driver = login(driver,'AF5325','lIVINGLIFE@1')
-get_nifty_price(driver)
+login(driver,'id','password')
+look_for_best_strikeprice(driver)
