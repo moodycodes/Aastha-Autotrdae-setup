@@ -161,5 +161,5 @@ def concat_eachday_maxmoves():
 
 
 driver = start_aastha()
-driver = login(driver,'AF5325','lIVINGLIFE@1')
+driver = login(driver,'','')
 get_nifty_price(driver)
